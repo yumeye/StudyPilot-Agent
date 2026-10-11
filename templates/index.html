@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StudyPilot — Agentic Study Planner</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <div class="eyebrow">AGENTIC STUDY PLANNER</div>
+      <h1>StudyPilot</h1>
+      <p>Plan smarter. Prioritise deadlines. Verify your workload.</p>
+      <div class="steps"><span>01 · Prioritise</span><span>02 · Schedule</span><span>03 · Verify</span></div>
+    </header>
+
+    <section class="panel">
+      <div class="section-head">
+        <div><div class="eyebrow">YOUR INPUTS</div><h2>Build your study plan</h2></div>
+        <button class="secondary" type="button" id="add-task">+ Add task</button>
+      </div>
+      {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+      <form method="post" id="planner-form">
+        <label class="daily-label">Available study time per day
+          <div class="daily-input"><input type="number" name="daily_hours" value="{{ request.form.get('daily_hours', '3') }}" min="0.25" max="24" step="0.25" required><span>hours / day</span></div>
+        </label>
+        <div id="tasks">
+          {% if request.method == 'POST' and request.form.getlist('name[]') %}
+            {% for i in range(request.form.getlist('name[]')|length) %}
+            <div class="task-row">
+              <div class="task-top"><strong>Task <span class="task-number">{{ i+1 }}</span></strong><button type="button" class="remove">Remove</button></div>
+              <div class="fields">
+                <label>Subject / task<input name="name[]" required value="{{ request.form.getlist('name[]')[i] }}" placeholder="e.g. Thermodynamics"></label>
+                <label>Deadline<input type="date" name="deadline[]" min="{{ today }}" required value="{{ request.form.getlist('deadline[]')[i] }}"></label>
+                <label>Total hours<input type="number" name="hours[]" min="0.25" step="0.25" required value="{{ request.form.getlist('hours[]')[i] }}"></label>
+                <label>Hours completed<input type="number" name="completed[]" min="0" step="0.25" required value="{{ request.form.getlist('completed[]')[i] }}"></label>
+                <label>Importance<select name="importance[]">{% for n in range(1,6) %}<option value="{{n}}" {% if request.form.getlist('importance[]')[i]|int == n %}selected{% endif %}>{{n}} / 5</option>{% endfor %}</select></label>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            {% for task in tasks %}
+            <div class="task-row">
+              <div class="task-top"><strong>Task <span class="task-number">{{ loop.index }}</span></strong><button type="button" class="remove">Remove</button></div>
+              <div class="fields">
+                <label>Subject / task<input name="name[]" required value="{{ task.name }}" placeholder="e.g. Thermodynamics"></label>
+                <label>Deadline<input type="date" name="deadline[]" min="{{ today }}" required value="{{ task.deadline }}"></label>
+                <label>Total hours<input type="number" name="hours[]" min="0.25" step="0.25" required value="{{ task.hours }}"></label>
+                <label>Hours completed<input type="number" name="completed[]" min="0" step="0.25" required value="{{ task.completed }}"></label>
+                <label>Importance<select name="importance[]">{% for n in range(1,6) %}<option value="{{n}}" {% if task.importance|int == n %}selected{% endif %}>{{n}} / 5</option>{% endfor %}</select></label>
+              </div>
+            </div>
+            {% endfor %}
+          {% endif %}
+        </div>
+        <button type="submit" class="primary">Run agent & generate plan <span>→</span></button>
+      </form>
+    </section>
+
+    {% if results %}
+    <section class="panel results" id="results">
+      <div class="eyebrow">AGENT OUTPUT</div><h2>Your study plan</h2>
+      <div class="metrics">
+        <div><span>Total remaining work</span><strong>{{ results.total_remaining }} h</strong></div>
+        <div><span>Daily limit</span><strong>{{ results.daily_hours }} h</strong></div>
+        <div><span>Workload check</span><strong class="{{ 'good' if results.valid else 'bad' }}">{{ 'Passed' if results.valid else 'Failed' }}</strong></div>
+      </div>
+      <h3>Priority ranking</h3>
+      <div class="ranking">
+        {% for task in results.ranked %}
+        <div class="rank-item"><span class="rank">{{ loop.index }}</span><div><strong>{{ task.name }}</strong><small>Deadline {{ task.deadline.strftime('%d %b %Y') }} · Importance {{ task.importance }}/5</small></div><b>{{ '%.2f'|format(task.score) }}</b></div>
+        {% endfor %}
+      </div>
+      <h3>Daily schedule</h3>
+      {% for day, sessions in results.schedule %}
+      <div class="day">
+        <div class="day-head"><strong>{{ day.strftime('%A, %d %B') }}</strong><span>{{ sessions|sum(attribute=1) }} / {{ results.daily_hours }} h</span></div>
+        {% if sessions %}
+          {% for name, hours in sessions %}<div class="session"><span>{{ name }}</span><strong>{{ hours }} h</strong></div>{% endfor %}
+        {% else %}<p class="muted">No study sessions allocated.</p>{% endif %}
+      </div>
+      {% endfor %}
+      <h3>Verification & next actions</h3>
+      {% if results.unresolved %}
+        <div class="alert"><strong>Some work remains unscheduled.</strong> Increase daily study hours, reduce estimated task hours, or reconsider deadlines.</div>
+        {% for name, hours in results.unresolved.items() %}<p class="unresolved">{{ name }} — {{ hours }} hour(s) unscheduled</p>{% endfor %}
+      {% else %}
+        <div class="success">All remaining work fits within the daily limit and is scheduled no later than its deadline.</div>
+      {% endif %}
+      <p class="note">The agent uses a transparent rule-based priority policy and a greedy scheduling tool. Re-submit after updating progress to re-plan.</p>
+      <button class="secondary print-button" onclick="window.print()" type="button">Print / save plan</button>
+    </section>
+    {% endif %}
+
+    <footer>StudyPilot · Python + Flask · Rule-based agent with scheduling and verification tools</footer>
+  </main>
+  <template id="task-template">
+    <div class="task-row">
+      <div class="task-top"><strong>Task <span class="task-number"></span></strong><button type="button" class="remove">Remove</button></div>
+      <div class="fields">
+        <label>Subject / task<input name="name[]" required placeholder="e.g. Thermodynamics"></label>
+        <label>Deadline<input type="date" name="deadline[]" min="{{ today }}" required value="{{ today }}"></label>
+        <label>Total hours<input type="number" name="hours[]" min="0.25" step="0.25" required value="2"></label>
+        <label>Hours completed<input type="number" name="completed[]" min="0" step="0.25" required value="0"></label>
+        <label>Importance<select name="importance[]">{% for n in range(1,6) %}<option value="{{n}}" {% if n == 3 %}selected{% endif %}>{{n}} / 5</option>{% endfor %}</select></label>
+      </div>
+    </div>
+  </template>
+  <script>
+    const tasks = document.getElementById('tasks');
+    const template = document.getElementById('task-template');
+    const addButton = document.getElementById('add-task');
+    function renumber() {
+      [...tasks.querySelectorAll('.task-row')].forEach((row, i) => {
+        row.querySelector('.task-number').textContent = i + 1;
+      });
+      addButton.disabled = tasks.querySelectorAll('.task-row').length >= 12;
+    }
+    addButton.addEventListener('click', () => {
+      tasks.appendChild(template.content.cloneNode(true));
+      renumber();
+    });
+    tasks.addEventListener('click', event => {
+      if (event.target.classList.contains('remove')) {
+        if (tasks.querySelectorAll('.task-row').length > 1) {
+          event.target.closest('.task-row').remove();
+          renumber();
+        } else {
+          alert('Keep at least one task.');
+        }
+      }
+    });
+    renumber();
+    {% if results %}document.getElementById('results').scrollIntoView({behavior:'smooth'});{% endif %}
+  </script>
+</body>
+</html>
